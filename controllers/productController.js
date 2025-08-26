@@ -52,12 +52,28 @@ const addProduct = async (req, res) => {
 //function for list product
 
 const listProduct = async (req, res) => {
-  try {
-    const products = await productModel.find({});
-    res.json({ success: true, products });
+   try {
+    const orders = await Order.find({ userId: req.user.id });
+
+    // populate product info manually
+    const populatedOrders = await Promise.all(
+      orders.map(async (order) => {
+        const populatedItems = await Promise.all(
+          order.items.map(async (item) => {
+            const product = await Product.findById(item.id).select("name image1");
+            return {
+              ...item._doc,       // keep size/qty
+              name: product?.name || "Unknown",
+              image: product?.image1 || "",
+            };
+          })
+        );
+        return { ...order._doc, items: populatedItems };
+      })
+    );
   } catch (error) {
     console.log(error);
-    res.json({ success: false, mesaage: error.message });
+    res.json({ success: false, mesage: error.message });
   }
 };
 
