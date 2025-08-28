@@ -5,6 +5,7 @@ import {
   allOrders,
   userOrders,
   updateStatus,
+  verifyRazorpay
 } from "../controllers/orderController.js";
 import adminAuth from "../middleware/AdminAuth.js";
 import authUser from "../middleware/auth.js";
