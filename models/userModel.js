@@ -17,9 +17,21 @@ const userSchema = new mongoose.Schema({
     cartData:{
         type:Object,
         default :{}
-    }
-},{minimize:false})
+    },
+    isVerified: {
+        type: Boolean,
+        default: false
+    },
+    otp: {
+        type: String // OTP itself
+    },
+    otpExpires: {
+        type: Date // Expiration timestamp for the OTP
+    },
+  },
+  { minimize: false }
+)
 
 const userModel = mongoose.models.user || mongoose.model('user',userSchema)
 
-export default userModel
+export default userModel;
