@@ -1,7 +1,8 @@
-import { response } from "express";
 import orderModel from "../models/orderModel.js";
 import userModel from "../models/userModel.js";
 import razorpay from "razorpay";
+import nodemailer from "nodemailer";
+import { orderConfirmationTemplate } from "../utils/email-template.js"; // ✅ Import template
 
 const currency = "inr";
 const deliveryCharge = 10;
@@ -11,10 +12,20 @@ const razorpayInstance = new razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-//placing orders using COD method
+// 🔹 Nodemailer setup
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.SMTP_EMAIL,
+    pass: process.env.SMTP_PASSWORD,
+  },
+});
+
+// ✅ COD order with email
 const placeOrder = async (req, res) => {
   try {
     const { userId, items, amount, address } = req.body;
+
     const orderData = {
       userId,
       items,
@@ -23,91 +34,62 @@ const placeOrder = async (req, res) => {
       paymentMethod: "COD",
       payment: false,
       date: Date.now(),
+      status: "Placed",
     };
 
     const newOrder = new orderModel(orderData);
     await newOrder.save();
 
+    // clear user cart
     await userModel.findByIdAndUpdate(userId, { cartData: {} });
 
-    res.json({ success: true, message: "Order Placed" });
+    // get user details
+    const user = await userModel.findById(userId);
+
+    // generate email HTML
+    const emailHtml = orderConfirmationTemplate(user, items, amount, address);
+
+    // send email to user
+    await transporter.sendMail({
+      from: process.env.SMTP_EMAIL,
+      to: user.email,
+      subject: "🛒 Order Confirmation",
+      html: emailHtml,
+    });
+
+    // send email to admin
+    await transporter.sendMail({
+      from: process.env.SMTP_EMAIL,
+      to: process.env.ADMIN_EMAIL,
+      subject: `📢 New Order from ${user.email}`,
+      html: `
+        <h2>New Order Received</h2>
+        <p><b>User:</b> ${user.email}</p>
+        <p><b>Total Amount:</b> ₹${amount}</p>
+        ${emailHtml}
+      `,
+    });
+
+    res.json({ success: true, message: "Order Placed & Email Sent", order: newOrder });
   } catch (error) {
-    console.log(error);
+    console.log("Order Error:", error);
     res.json({ success: false, message: error.message });
   }
 };
 
-//placing orders using Razorpay method
-// const placeOrderRazorpay = async (req, res) => {
-//   try {
-//     const { userId, items, amount, address } = req.body;
+// 🔹 Paypal placeholders
+const placeOrderPaypal = async (req, res) => {
+  res.json({ success: false, message: "PayPal not implemented yet" });
+};
 
-//     const orderData = {
-//       userId,
-//       items,
-//       amount,
-//       address,
-//       paymentMethod: "Razorpay",
-//       payment: false,
-//       date: Date.now(),
-//     };
+const verfiyPaypal = async (req, res) => {
+  res.json({ success: false, message: "PayPal verify not implemented yet" });
+};
 
-//     const newOrder = new orderModel(orderData);
-//     await newOrder.save();
-
-//     const options = {
-//       amount: amount * 100,
-//       currency: currency.toUpperCase(),
-//       receipt: newOrder._id.toString(),
-//     };
-
-//     await razorpayInstance.orders.create(options, (error, order) => {
-//       if (error) {
-//         console.log(error);
-//         return res.json({ success: false, message: error });
-//       }
-//       res.json({ success: true, order });
-//     });
-//   } catch (error) {
-//     console.log(error);
-//     res.json({ success: false, message: error.message });
-//   }
-// };
-
-//placing orders using Paypal method
-
-const placeOrderPaypal = async(req,res)=>{
-
-}
-
-const verfiyPaypal = async(req,res)=>{
-
-}
-
-// const verifyRazorpay = async (req, res) => {
-//   try {
-//     const { userId, razorpay_order_id } = req.body;
-
-//     const orderInfo = await razorpayInstance.orders.fetch(razorpay_order_id);
-//     if (orderInfo.status === "paid") {
-//       await orderModel.findByIdAndUpdate(orderInfo.receipt, { payment: true });
-//       await userModel.findByIdAndUpdate(userId, { cartData: {} });
-//       res.json({ success: true, message: "Payment Successful" });
-//     } else {
-//       res.json({ success: false, message: "Payment Failed" });
-//     }
-//   } catch (error) {
-//     console.log(error);
-//     res.json({ success: false, message: error.message });
-//   }
-// };
-
-//all orders data for admin panel
+// 🔹 All orders (admin)
 const allOrders = async (req, res) => {
   try {
-    console.log("Getting all orders");
     const orders = await orderModel.find({});
-    console.log("orders found" + orders);
     res.json({ success: true, orders });
   } catch (error) {
     console.log(error);
@@ -115,11 +97,10 @@ const allOrders = async (req, res) => {
   }
 };
 
-//user order data for frontend
+// 🔹 Orders for user
 const userOrders = async (req, res) => {
   try {
     const { userId } = req.body;
-
     const orders = await orderModel.find({ userId });
     res.json({ success: true, orders });
   } catch (error) {
@@ -128,11 +109,10 @@ const userOrders = async (req, res) => {
   }
 };
 
-//update order status for admin panel
+// 🔹 Update status
 const updateStatus = async (req, res) => {
   try {
     const { orderId, status } = req.body;
-
     await orderModel.findByIdAndUpdate(orderId, { status });
     res.json({ success: true, message: "Status Updated" });
   } catch (error) {
@@ -143,11 +123,9 @@ const updateStatus = async (req, res) => {
 
 export {
   placeOrder,
-  // placeOrderRazorpay,
   allOrders,
   userOrders,
   updateStatus,
-  // verifyRazorpay,
   placeOrderPaypal,
-  verfiyPaypal
+  verfiyPaypal,
 };
