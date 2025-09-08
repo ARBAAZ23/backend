@@ -72,7 +72,7 @@ const placeOrder = async (req, res) => {
       html: `
         <h2>New Order Received</h2>
         <p><b>User:</b> ${user.email}</p>
-        <p><b>Total Amount:</b> ₹${amount}</p>
+        <p><b>Total Amount:</b> £ ${amount}</p>
         ${emailHtml}
       `,
     });
