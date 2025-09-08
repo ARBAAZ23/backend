@@ -38,8 +38,8 @@ export const orderConfirmationTemplate = async (
           <td>${
             item.quantity || 1
           }</td> <!-- Assuming 'S' from your log is quantity -->
-          <td>₹${product.price || 0}</td>
-          <td>₹${(product.price || 0) * (item.quantity || 1)}</td>
+          <td> £${product.price || 0}</td>
+          <td> £${(product.price || 0) * (item.quantity || 1)}</td>
         </tr>
       `;
     })
@@ -63,7 +63,7 @@ export const orderConfirmationTemplate = async (
       </tbody>
     </table>
 
-    <h3>Grand Total: ₹${amount}</h3>
+    <h3>Grand Total: £${amount}</h3>
     <p><b>Delivery Address:</b></p>
     <p>
       ${address.street}<br/>
