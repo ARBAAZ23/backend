@@ -5,11 +5,13 @@ import {
   verifyOtp,
   resendOtp,
   adminLogin,
-  forgotPassword,       // 🔹 new
-  verifyForgotOtp,      // 🔹 new
+  forgotPassword, // 🔹 new
+  verifyForgotOtp, // 🔹 new
   resetPassword,
-  googleLogin        // 🔹 new
+  googleLogin, // 🔹 new
 } from "../controllers/userController.js";
+import authUser from "../middleware/auth.js";
+import { getProfile } from "../controllers/profileController.js";
 
 const userRouter = express.Router();
 
@@ -24,7 +26,9 @@ userRouter.post("/forgot-password", forgotPassword);
 userRouter.post("/verify-forgot-otp", verifyForgotOtp);
 userRouter.post("/reset-password", resetPassword);
 
-// Google Login 
+// Google Login
 userRouter.post("/google-login", googleLogin);
 
+//Profile Route
+userRouter.get("/profile", authUser, getProfile);
 export default userRouter;
