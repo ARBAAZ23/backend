@@ -8,10 +8,11 @@ import {
   forgotPassword, // 🔹 new
   verifyForgotOtp, // 🔹 new
   resetPassword,
-  googleLogin, // 🔹 new
+  googleLogin,
+  deleteAccount, // 🔹 new
 } from "../controllers/userController.js";
 import authUser from "../middleware/auth.js";
-import { getProfile } from "../controllers/profileController.js";
+import { changePassword, getProfile, updateProfileImg } from "../controllers/profileController.js";
 
 const userRouter = express.Router();
 
@@ -31,4 +32,9 @@ userRouter.post("/google-login", googleLogin);
 
 //Profile Route
 userRouter.get("/profile", authUser, getProfile);
+userRouter.put('/update-img',authUser,updateProfileImg);
+userRouter.put('/change-password',authUser,changePassword)
+
+//Delete userAccount
+userRouter.delete('/delete',authUser,deleteAccount)
 export default userRouter;
