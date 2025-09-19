@@ -352,7 +352,6 @@ const googleLogin = async (req, res) => {
     });
 
     const payload = ticket.getPayload();
-    console.log("Google payload:", payload);
 
     const { email, name, picture } = payload; // 👈 it's "picture", not "profilePic"
 
@@ -409,6 +408,14 @@ const googleLogin = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+ const getAllUsers = async (req, res) => {
+  try {
+    const users = await userModel.find({}, "name email phone"); // only return safe fields
+    res.json({ success: true, users });
+  } catch (error) {
+    res.json({ success: false, message: error.message });
+  }
+};
 
 export {
   loginUser,
@@ -420,5 +427,6 @@ export {
   verifyForgotOtp,
   resetPassword,
   googleLogin,
-  deleteAccount
+  deleteAccount,
+  getAllUsers
 };

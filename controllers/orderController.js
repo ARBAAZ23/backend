@@ -13,13 +13,30 @@ const razorpayInstance = new razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// 🔹 Nodemailer setup
+console.log("SMTP_EMAIL:", process.env.SMTP_EMAIL);
+console.log(
+  "SMTP_PASSWORD:",
+  process.env.SMTP_PASSWORD ? "✅ Loaded" : "❌ Missing"
+);
+
+// 🔹 Nodemailer setup (Gmail + App Password)
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.SMTP_EMAIL,
     pass: process.env.SMTP_PASSWORD,
   },
+});
+
+// Optional: test transporter on app start
+transporter.verify((error, success) => {
+  if (error) {
+    console.error("❌ SMTP Error:", error);
+  } else {
+    console.log("✅ SMTP server ready to send emails");
+  }
 });
 
 // ✅ COD order with email
@@ -54,7 +71,6 @@ const placeOrder = async (req, res) => {
       amount,
       address
     );
-
 
     // send email to user
     await transporter.sendMail({
@@ -103,10 +119,17 @@ const placeOrderPaypal = async (req, res) => {
     request.prefer("return=representation");
     request.requestBody({
       intent: "CAPTURE",
+      application_context: {
+        return_url: "http://localhost:5173/payment-success",
+        cancel_url: "http://localhost:5173/payment-cancelled",
+        brand_name: "YourStore",
+        landing_page: "LOGIN",
+        user_action: "PAY_NOW",
+      },
       purchase_units: [
         {
           amount: {
-            currency_code: "USD", // or "INR"
+            currency_code: "GBP",
             value: amount.toFixed(2),
           },
         },
@@ -152,21 +175,37 @@ const verifyPaypal = async (req, res) => {
         .json({ success: false, message: "orderId & userId are required" });
     }
 
+    // Capture PayPal order
     const request = new checkoutNodeJssdk.orders.OrdersCaptureRequest(orderId);
     request.requestBody({});
 
     const capture = await client().execute(request);
 
     if (capture.result.status === "COMPLETED") {
-      // Update DB order
+      // Update the order in DB
       const updatedOrder = await orderModel.findOneAndUpdate(
         { paypalOrderId: orderId, userId },
         { payment: true, status: "Placed" },
         { new: true }
       );
 
+      if (!updatedOrder) {
+        return res.status(404).json({
+          success: false,
+          message: "No matching order found in database",
+        });
+      }
+
+      // Fetch user
       const user = await userModel.findById(userId);
-      const emailHtml = orderConfirmationTemplate(
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      const emailHtml = await orderConfirmationTemplate(
         user,
         updatedOrder.items,
         updatedOrder.amount,
@@ -198,8 +237,8 @@ const verifyPaypal = async (req, res) => {
       res.json({ success: false, message: "Payment not completed" });
     }
   } catch (error) {
-    console.log("PayPal Verify Error:", error);
-    res.json({ success: false, message: error.message });
+    console.error("PayPal Verify Error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -209,7 +248,6 @@ const allOrders = async (req, res) => {
     const orders = await orderModel.find({});
     res.json({ success: true, orders });
   } catch (error) {
-    console.log(error);
     res.json({ success: false, message: error.message });
   }
 };
@@ -221,7 +259,6 @@ const userOrders = async (req, res) => {
     const orders = await orderModel.find({ userId });
     res.json({ success: true, orders });
   } catch (error) {
-    console.log(error);
     res.json({ success: false, message: error.message });
   }
 };
@@ -233,7 +270,6 @@ const updateStatus = async (req, res) => {
     await orderModel.findByIdAndUpdate(orderId, { status });
     res.json({ success: true, message: "Status Updated" });
   } catch (error) {
-    console.log(error);
     res.json({ success: false, message: error.message });
   }
 };

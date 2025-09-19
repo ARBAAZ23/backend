@@ -9,12 +9,17 @@ import {
   verifyForgotOtp, // 🔹 new
   resetPassword,
   googleLogin,
-  deleteAccount, // 🔹 new
+  deleteAccount,
+  getAllUsers // 🔹 new
 } from "../controllers/userController.js";
 import authUser from "../middleware/auth.js";
 import { changePassword, getProfile, updateProfileImg } from "../controllers/profileController.js";
+import adminAuth from "../middleware/AdminAuth.js";
 
 const userRouter = express.Router();
+
+//allUser to admin
+userRouter.get('/list',adminAuth,getAllUsers)
 
 userRouter.post("/register", registerUser);
 userRouter.post("/verify-otp", verifyOtp);

@@ -8,13 +8,15 @@ import productRouter from "./routes/productRoute.js";
 import cartRouter from "./routes/cartRoute.js";
 import orderRouter from "./routes/orderRoute.js";
 import wishlistRouter from "./routes/wishlistRoutes.js";
+import reviewRouter from "./routes/reviewRoutes.js";
+import analysisRouter from "./routes/analysisRoute.js";
 
 //App config
 
 const app = express();
 const port = process.env.PORT || 4000;
 ConnectDB();
-cloudinary  ;
+cloudinary;
 
 //Middlewares
 
@@ -28,6 +30,8 @@ app.use("/api/product", productRouter);
 app.use("/api/cart", cartRouter);
 app.use("/api/order", orderRouter);
 app.use("/api/wishlist", wishlistRouter);
+app.use("/api/reviews", reviewRouter);
+app.use("/api/analysis", analysisRouter);
 
 app.get("/", (req, res) => {
   res.send("API WORKING");

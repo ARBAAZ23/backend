@@ -2,8 +2,6 @@ import cloudinary from "../config/cloudinary.js";
 
 export const uploadFromUrl = async (url) => {
   try {
-    console.log("Uploading to Cloudinary:", url);
-
     const result = await cloudinary.uploader.upload(url, {
       folder: "user_profiles",
     });
