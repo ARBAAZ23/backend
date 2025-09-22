@@ -5,8 +5,11 @@ import nodemailer from "nodemailer";
 import { orderConfirmationTemplate } from "../utils/email-template.js";
 import { client, checkoutNodeJssdk } from "../config/paypal.js";
 
+
 const currency = "inr";
 const deliveryCharge = 10;
+
+const frontendUrl = process.env.FRONTEND_URL;
 
 const razorpayInstance = new razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -120,8 +123,8 @@ const placeOrderPaypal = async (req, res) => {
     request.requestBody({
       intent: "CAPTURE",
       application_context: {
-        return_url: "http://localhost:5173/payment-success",
-        cancel_url: "http://localhost:5173/payment-cancelled",
+        return_url: frontendUrl+"/payment-success",
+        cancel_url: frontendUrl+"/payment-cancelled",
         brand_name: "YourStore",
         landing_page: "LOGIN",
         user_action: "PAY_NOW",
