@@ -1,3 +1,4 @@
+// controllers/userController.js
 import userModel from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import validator from "validator";
@@ -6,15 +7,6 @@ import nodemailer from "nodemailer";
 import { OAuth2Client } from "google-auth-library";
 import { uploadFromUrl } from "../utils/uploadFromUrl.js";
 
-// // --- TEMPORARY DEBUGGING LOGS ---
-// console.log("DEBUG: ==========================================");
-// console.log("DEBUG: Checking Environment Variables on Server Start");
-// console.log("DEBUG: NODE_ENV =", process.env.NODE_ENV);
-// console.log("DEBUG: JWT_SECRET =", process.env.JWT_SECRET ? 'SET' : 'NOT SET');
-// console.log("DEBUG: SMTP_EMAIL =", process.env.SMTP_EMAIL);
-// console.log("DEBUG: SMTP_PASSWORD =", process.env.SMTP_PASSWORD ? 'SET (hidden)' : 'NOT SET');
-// console.log("DEBUG: ==========================================");
-// // --- END TEMPORARY DEBUGGING LOGS ---
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const createToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
@@ -31,7 +23,6 @@ const transporter = nodemailer.createTransport({
 
 // Helper function to send email
 const sendEmail = async (to, subject, text) => {
-  console.log(`DEBUG: Sending email to "${to}" subject: "${subject}"`);
   try {
     const info = await transporter.sendMail({
       from: process.env.SMTP_EMAIL,
@@ -39,14 +30,10 @@ const sendEmail = async (to, subject, text) => {
       subject,
       text,
     });
-    console.log(
-      `DEBUG: Email sent successfully! Message ID: ${info.messageId}`
-    );
+    console.log(`Email sent: ${info.messageId}`);
   } catch (error) {
     console.error("EMAIL ERROR:", error);
-    throw new Error(
-      `Failed to send email: ${error.message || "Unknown error"}`
-    );
+    throw new Error(error.message || "Failed to send email");
   }
 };
 
@@ -56,8 +43,9 @@ const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
     const user = await userModel.findOne({ email });
-    if (!user)
+    if (!user) {
       return res.json({ success: false, message: "User doesn't exist" });
+    }
 
     if (!user.isVerified) {
       return res.json({
@@ -67,15 +55,31 @@ const loginUser = async (req, res) => {
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (isMatch) {
-      const token = createToken(user._id);
-      res.json({ success: true, token });
-    } else {
-      res.json({ success: false, message: "Invalid Credentials" });
+    if (!isMatch) {
+      return res.json({ success: false, message: "Invalid Credentials" });
     }
+
+    const token = createToken(user._id);
+
+    // Prepare user object to send (exclude sensitive fields)
+    const safeUser = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      profilePic: user.profilePic || null,
+      phone: user.phone || null,
+      role: user.role || "user",
+    };
+
+    return res.json({
+      success: true,
+      message: "Login successful",
+      token,
+      user: safeUser,
+    });
   } catch (error) {
     console.error("Error in loginUser:", error);
-    res.json({ success: false, message: error.message || "Login failed" });
+    return res.json({ success: false, message: error.message || "Login failed" });
   }
 };
 
@@ -90,7 +94,7 @@ const registerUser = async (req, res) => {
         message: "Please enter a valid email",
       });
     }
-    if (password.length < 6) {
+    if (!password || password.length < 6) {
       return res.json({
         success: false,
         message: "Password must be at least 6 characters",
@@ -99,16 +103,13 @@ const registerUser = async (req, res) => {
 
     const existingUser = await userModel.findOne({ email });
     if (existingUser) {
+      // If user exists but not verified -> resend OTP
       if (!existingUser.isVerified) {
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         existingUser.otp = otp;
         existingUser.otpExpires = Date.now() + 10 * 60 * 1000;
         await existingUser.save();
-        await sendEmail(
-          email,
-          "Verify your account",
-          `Your new OTP is ${otp}.`
-        );
+        await sendEmail(email, "Verify your account", `Your new OTP is ${otp}.`);
         return res.json({
           success: true,
           message: "New OTP sent.",
@@ -145,7 +146,7 @@ const registerUser = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in registerUser:", error);
-    res.json({
+    return res.json({
       success: false,
       message: error.message || "Registration failed",
     });
@@ -167,8 +168,9 @@ const verifyOtp = async (req, res) => {
       });
     }
 
-    if (user.otp !== otp)
+    if (user.otp !== otp) {
       return res.json({ success: false, message: "Invalid OTP" });
+    }
 
     user.isVerified = true;
     user.otp = null;
@@ -176,10 +178,25 @@ const verifyOtp = async (req, res) => {
     await user.save();
 
     const token = createToken(user._id);
-    res.json({ success: true, message: "Account verified", token });
+
+    const safeUser = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      profilePic: user.profilePic || null,
+      phone: user.phone || null,
+      role: user.role || "user",
+    };
+
+    return res.json({
+      success: true,
+      message: "Account verified",
+      token,
+      user: safeUser,
+    });
   } catch (error) {
     console.error("Error in verifyOtp:", error);
-    res.json({
+    return res.json({
       success: false,
       message: error.message || "OTP verification failed",
     });
@@ -202,10 +219,10 @@ const resendOtp = async (req, res) => {
     await user.save();
 
     await sendEmail(email, "Resend OTP", `Your new OTP is ${otp}.`);
-    res.json({ success: true, message: "New OTP sent." });
+    return res.json({ success: true, message: "New OTP sent." });
   } catch (error) {
     console.error("Error in resendOtp:", error);
-    res.json({ success: false, message: error.message || "Resend OTP failed" });
+    return res.json({ success: false, message: error.message || "Resend OTP failed" });
   }
 };
 
@@ -222,13 +239,13 @@ const adminLogin = async (req, res) => {
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
       );
-      res.json({ success: true, token: adminToken });
+      return res.json({ success: true, token: adminToken });
     } else {
-      res.json({ success: false, message: "Invalid Admin Credentials" });
+      return res.json({ success: false, message: "Invalid Admin Credentials" });
     }
   } catch (error) {
     console.error("Error in adminLogin:", error);
-    res.json({
+    return res.json({
       success: false,
       message: error.message || "Admin login failed",
     });
@@ -248,12 +265,8 @@ const forgotPassword = async (req, res) => {
     user.otpExpires = Date.now() + 10 * 60 * 1000;
     await user.save();
 
-    await sendEmail(
-      email,
-      "Password Reset OTP",
-      `Your password reset OTP is ${otp}.`
-    );
-    res.json({
+    await sendEmail(email, "Password Reset OTP", `Your password reset OTP is ${otp}.`);
+    return res.json({
       success: true,
       message: "OTP sent to email",
       redirect: "verify-forgot-otp",
@@ -261,7 +274,7 @@ const forgotPassword = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in forgotPassword:", error);
-    res.json({
+    return res.json({
       success: false,
       message: error.message || "Forgot password failed",
     });
@@ -281,21 +294,19 @@ const verifyForgotOtp = async (req, res) => {
     if (user.otp !== otp)
       return res.json({ success: false, message: "Invalid OTP" });
 
-    // Mark OTP verified, but don't log in yet
+    // Mark OTP verified for reset
     user.otp = null;
     user.otpExpires = null;
-    user.isOtpVerifiedForReset = true; // custom flag
+    user.isOtpVerifiedForReset = true;
     await user.save();
 
-    console.log(user);
-
-    res.json({
+    return res.json({
       success: true,
       message: "OTP verified. You can reset password now.",
     });
   } catch (error) {
     console.error("Error in verifyForgotOtp:", error);
-    res.json({
+    return res.json({
       success: false,
       message: error.message || "OTP verification failed",
     });
@@ -324,26 +335,27 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    // hash password with salt
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     user.password = hashedPassword;
-    user.isOtpVerifiedForReset = false; // reset flag
+    user.isOtpVerifiedForReset = false;
     await user.save();
 
-    res.json({ success: true, message: "Password reset successful" });
+    return res.json({ success: true, message: "Password reset successful" });
   } catch (error) {
     console.error("Error in resetPassword:", error);
-    res.json({
+    return res.json({
       success: false,
       message: error.message || "Password reset failed",
     });
   }
 };
 
+// ================= GOOGLE LOGIN =================
 const googleLogin = async (req, res) => {
   try {
     const { token } = req.body;
+    if (!token) return res.status(400).json({ success: false, message: "Token required" });
 
     // Verify Google token
     const ticket = await client.verifyIdToken({
@@ -352,49 +364,58 @@ const googleLogin = async (req, res) => {
     });
 
     const payload = ticket.getPayload();
-
-    const { email, name, picture } = payload; // 👈 it's "picture", not "profilePic"
+    const { email, name, picture } = payload;
 
     let user = await userModel.findOne({ email });
 
     if (!user) {
-      // Upload Google picture to Cloudinary
-      const cloudPic = await uploadFromUrl(picture);
+      // Upload Google picture to Cloudinary (or your storage) if you have that util
+      let cloudPic = null;
+      try {
+        if (picture) cloudPic = await uploadFromUrl(picture);
+      } catch (err) {
+        console.warn("Could not upload Google picture:", err.message);
+      }
 
       user = new userModel({
         name,
         email,
-        password: "", // Google users don’t need local password
+        password: "", // Google users don't need local password
         profilePic: cloudPic,
+        isVerified: true, // mark verified since Google provided the email
       });
 
       await user.save();
     }
 
-    // Generate JWT
-    const authToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    const authToken = createToken(user._id);
 
-    res.json({
+    const safeUser = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      profilePic: user.profilePic || null,
+      phone: user.phone || null,
+      role: user.role || "user",
+    };
+
+    return res.json({
       success: true,
+      message: "Google login successful",
       token: authToken,
-      user: {
-        name: user.name,
-        email: user.email,
-        profilePic: user.profilePic,
-      },
+      user: safeUser,
     });
   } catch (error) {
     console.error("Google login error:", error);
-    res.status(500).json({ success: false, message: "Google login failed" });
+    return res.status(500).json({ success: false, message: "Google login failed" });
   }
 };
 
-
- const deleteAccount = async (req, res) => {
+// ================= DELETE ACCOUNT =================
+const deleteAccount = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
     const user = await userModel.findByIdAndDelete(userId);
 
@@ -402,18 +423,21 @@ const googleLogin = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    res.json({ success: true, message: "Account deleted successfully" });
+    return res.json({ success: true, message: "Account deleted successfully" });
   } catch (err) {
-    console.error("❌ Delete account error:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error("Delete account error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };
- const getAllUsers = async (req, res) => {
+
+// ================= GET ALL USERS =================
+const getAllUsers = async (req, res) => {
   try {
-    const users = await userModel.find({}, "name email phone"); // only return safe fields
-    res.json({ success: true, users });
+    const users = await userModel.find({}, "name email phone profilePic role"); // only return safe fields
+    return res.json({ success: true, users });
   } catch (error) {
-    res.json({ success: false, message: error.message });
+    console.error("getAllUsers error:", error);
+    return res.json({ success: false, message: error.message || "Failed to fetch users" });
   }
 };
 
@@ -428,5 +452,5 @@ export {
   resetPassword,
   googleLogin,
   deleteAccount,
-  getAllUsers
+  getAllUsers,
 };

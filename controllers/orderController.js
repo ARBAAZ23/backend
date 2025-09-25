@@ -4,7 +4,8 @@ import razorpay from "razorpay";
 import nodemailer from "nodemailer";
 import { orderConfirmationTemplate } from "../utils/email-template.js";
 import { client, checkoutNodeJssdk } from "../config/paypal.js";
-
+import { generateInvoicePdf } from "../utils/pdf-generator.js";
+import fs from "fs";
 
 const currency = "inr";
 const deliveryCharge = 10;
@@ -15,12 +16,6 @@ const razorpayInstance = new razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
-
-console.log("SMTP_EMAIL:", process.env.SMTP_EMAIL);
-console.log(
-  "SMTP_PASSWORD:",
-  process.env.SMTP_PASSWORD ? "✅ Loaded" : "❌ Missing"
-);
 
 // 🔹 Nodemailer setup (Gmail + App Password)
 const transporter = nodemailer.createTransport({
@@ -208,29 +203,64 @@ const verifyPaypal = async (req, res) => {
         });
       }
 
+      // ✅ Clear the user's cart
+      await userModel.findByIdAndUpdate(userId, { cartData: {} });
+
+      // Generate email content
       const emailHtml = await orderConfirmationTemplate(
         user,
         updatedOrder.items,
         updatedOrder.amount,
-        updatedOrder.address
+        updatedOrder.address,
+        updatedOrder._id.toString()
       );
 
-      // Email user
+      // ✅ Generate and attach PDF invoice
+      const invoicePath = await generateInvoicePdf(
+        user,
+        updatedOrder.items,
+        updatedOrder.amount,
+        updatedOrder.address,
+        updatedOrder._id.toString()
+      );
+
+      // ✅ Email user with invoice
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: user.email,
         subject: "✅ PayPal Order Confirmed",
         html: emailHtml,
+        attachments: [
+          {
+            filename: `Invoice-${updatedOrder._id}.pdf`,
+            path: invoicePath,
+          },
+        ],
       });
 
-      // Email admin
+      // ✅ Email admin with invoice
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: process.env.ADMIN_EMAIL,
         subject: `📢 New PayPal Order from ${user.email}`,
         html: emailHtml,
+        attachments: [
+          {
+            filename: `Invoice-${updatedOrder._id}.pdf`,
+            path: invoicePath,
+          },
+        ],
       });
 
+      // ✅ Optional cleanup
+      setTimeout(() => {
+        fs.unlink(invoicePath, (err) => {
+          if (err) console.error("❌ Failed to delete invoice:", err);
+          else console.log(`🧹 Invoice deleted: ${invoicePath}`);
+        });
+      }, 60000); // Delete after 60 seconds
+
+      // ✅ Response
       res.json({
         success: true,
         message: "Payment verified",
@@ -244,6 +274,8 @@ const verifyPaypal = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+
 
 // 🔹 All orders (admin)
 const allOrders = async (req, res) => {

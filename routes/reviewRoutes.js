@@ -1,6 +1,7 @@
 import express from "express";
 import Review from "../models/reviewModel.js";
 import authUser from "../middleware/auth.js";
+import mongoose from "mongoose";
 
 const reviewRouter = express.Router();
 
@@ -22,13 +23,15 @@ reviewRouter.post("/", authUser, async (req, res) => {
   try {
     const { rating, comment, product } = req.body;
 
+    console.log(req.body);
+
     if (!rating || !comment || !product) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
     const newReview = new Review({
       product,
-      user: req.user._id, // from middleware
+      user: req.body.userId, // from middleware
       rating,
       comment,
     });
@@ -39,6 +42,7 @@ reviewRouter.post("/", authUser, async (req, res) => {
 
     res.status(201).json(populatedReview);
   } catch (error) {
+    console.log(error);
     res.status(500).json({ message: "Failed to add review", error });
   }
 });
