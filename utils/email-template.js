@@ -8,10 +8,13 @@ export const orderConfirmationTemplate = async (
 ) => {
   let productHtml = await Promise.all(
     items.map(async (item) => {
-      // Access the populated product object directly from item.id
+      // Fetch product details from DB
       const product = await productModel.findById(item.id);
+      
+      // Extract size (assuming 'M' is the key for size)
+      const size = item.M || "";
 
-      // If product is null, undefined, or not an object (e.g., just an ID string), handle it gracefully
+      // Handle missing product gracefully
       if (!product || typeof product === "string" || !product.name) {
         console.warn(
           "⚠️ Missing or incomplete product details for an item:",
@@ -26,20 +29,20 @@ export const orderConfirmationTemplate = async (
         `;
       }
 
+      // Get product image or fallback
       const imageUrl =
         Array.isArray(product.image) && product.image.length > 0
           ? product.image[0]
-          : "https://via.placeholder.com/50?text=No+Image"; // Fallback image
+          : "https://via.placeholder.com/50?text=No+Image";
 
+      // Build table row HTML with quantity and size
       return `
         <tr>
           <td><img src="${imageUrl}" width="50" alt="${product.name}" /></td>
           <td>${product.name}</td>
-          <td>${
-            item.quantity || 1
-          }</td> <!-- Assuming 'S' from your log is quantity -->
-          <td> £${product.price || 0}</td>
-          <td> £${(product.price || 0) * (item.quantity || 1)}</td>
+          <td>${item.quantity || 1} ${size ? `(${size})` : ""}</td>
+          <td>£${product.price || 0}</td>
+          <td>£${(product.price || 0) * (item.quantity || 1)}</td>
         </tr>
       `;
     })
@@ -55,7 +58,11 @@ export const orderConfirmationTemplate = async (
     <table border="1" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%;">
       <thead>
         <tr style="background-color: #f2f2f2;">
-          <th>Image</th><th>Product</th><th>Qty</th><th>Price</th><th>Total</th>
+          <th>Image</th>
+          <th>Product</th>
+          <th>Qty</th>
+          <th>Price</th>
+          <th>Total</th>
         </tr>
       </thead>
       <tbody>
