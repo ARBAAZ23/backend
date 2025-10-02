@@ -13,11 +13,9 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      // required: true,
     },
     profilePic: {
       type: String,
-      // required: true,
     },
     cartData: {
       type: Object,
@@ -28,17 +26,24 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
     otp: {
-      type: String, // OTP itself
+      type: String,
     },
     otpExpires: {
-      type: Date, // Expiration timestamp for the OTP
+      type: Date,
     },
     isOtpVerifiedForReset: {
       type: Boolean,
       default: false,
     },
 
-    // ✅ Wishlist field (inside schema object)
+    // ✅ Address field
+    address: {
+      street: { type: String },
+      city: { type: String },
+      pincode: { type: String },
+    },
+
+    // ✅ Wishlist field
     wishlist: [
       {
         itemId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
@@ -46,7 +51,7 @@ const userSchema = new mongoose.Schema(
       },
     ],
   },
-  { minimize: false, timestamps: true } // merged options
+  { minimize: false, timestamps: true }
 );
 
 const userModel = mongoose.models.user || mongoose.model("user", userSchema);

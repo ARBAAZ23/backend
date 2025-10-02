@@ -5,6 +5,7 @@
       userId: {
         type: String,
         required: true,
+        ref: "user",
       },
       items: {
         type: Array,

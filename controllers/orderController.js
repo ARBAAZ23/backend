@@ -203,7 +203,7 @@ const verifyPaypal = async (req, res) => {
         });
       }
 
-      // ✅ Clear the user's cart
+      // Clear the user's cart
       await userModel.findByIdAndUpdate(userId, { cartData: {} });
 
       // Generate email content
@@ -215,7 +215,7 @@ const verifyPaypal = async (req, res) => {
         updatedOrder._id.toString()
       );
 
-      // ✅ Generate and attach PDF invoice
+      // Generate and attach PDF invoice
       const invoicePath = await generateInvoicePdf(
         user,
         updatedOrder.items,
@@ -224,7 +224,7 @@ const verifyPaypal = async (req, res) => {
         updatedOrder._id.toString()
       );
 
-      // ✅ Email user with invoice
+      // Email user with invoice
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: user.email,
@@ -238,7 +238,7 @@ const verifyPaypal = async (req, res) => {
         ],
       });
 
-      // ✅ Email admin with invoice
+      // Email admin with invoice
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: process.env.ADMIN_EMAIL,
@@ -252,15 +252,9 @@ const verifyPaypal = async (req, res) => {
         ],
       });
 
-      // ✅ Optional cleanup
-      setTimeout(() => {
-        fs.unlink(invoicePath, (err) => {
-          if (err) console.error("❌ Failed to delete invoice:", err);
-          else console.log(`🧹 Invoice deleted: ${invoicePath}`);
-        });
-      }, 60000); // Delete after 60 seconds
+      // **Invoice deletion removed** to keep the file
 
-      // ✅ Response
+      // Send success response
       res.json({
         success: true,
         message: "Payment verified",
@@ -277,10 +271,11 @@ const verifyPaypal = async (req, res) => {
 
 
 
+
 // 🔹 All orders (admin)
 const allOrders = async (req, res) => {
   try {
-    const orders = await orderModel.find({});
+    const orders = await orderModel.find({}).populate("userId");
     res.json({ success: true, orders });
   } catch (error) {
     res.json({ success: false, message: error.message });
