@@ -1,5 +1,6 @@
+// heroRouter.js
 import express from "express";
-import upload from "../middleware/multer.js"; // your multer config
+import upload from "../middleware/multer.js";
 import Hero from "../models/heroModel.js";
 
 const heroRouter = express.Router();
@@ -12,16 +13,19 @@ heroRouter.post("/", upload.single("file"), async (req, res) => {
     }
 
     const { title } = req.body;
-    const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
 
-    // Remove previous hero entries
+    // ✅ Prefer public BACKEND_URL
+    const backendUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get("host")}`;
+
+    // Remove previous hero
     await Hero.deleteMany({});
 
-    const hero = new Hero({ title, mediaUrl: fileUrl });
+    const hero = new Hero({ title, mediaUrl: req.file.filename });
     await hero.save();
 
     res.json({ success: true, hero });
   } catch (error) {
+    console.error("Hero upload error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
