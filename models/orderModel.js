@@ -1,53 +1,20 @@
-  import mongoose from "mongoose";
+import mongoose from "mongoose";
 
-  const orderSchema = new mongoose.Schema(
-    {
-      userId: {
-        type: String,
-        required: true,
-        ref: "user",
-      },
-      items: {
-        type: Array,
-        required: true,
-      },
-      amount: {
-        type: Number,
-        required: true,
-      },
-      address: {
-        type: Object,
-        required: true,
-      },
-      status: {
-        type: String,
-        required: true,
-        default: "Order Placed",
-      },
-      paymentMethod: {
-        type: String,
-        required: true,
-      },
-      payment: {
-        type: Boolean,
-        required: true,
-        default: false,
-      },
-      date: {
-        type: Number,
-        required: true,
-      },
+const orderSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  items: { type: Array, required: true },
+  baseAmount: { type: Number, required: true },     // amount excluding shipping
+  shippingCost: { type: Number, required: true },
+  totalAmount: { type: Number, required: true },     // base + shipping
+  address: { type: Object, required: true },
+  shippingMethod: { type: String, enum: ["standard", "next_day"], default: "standard" },
+  country: { type: String, required: true },
+  paymentMethod: { type: String, required: true },
+  payment: { type: Boolean, default: false },
+  paypalOrderId: { type: String },
+  date: { type: Number, required: true },
+  status: { type: String, default: "Pending" },
+});
 
-      // ✅ Add this field
-      paypalOrderId: {
-        type: String,
-        required: false, // Optional since it's only needed for PayPal orders
-      },
-    },
-    { timestamps: true }
-  );
-
-  const orderModel =
-    mongoose.models.order || mongoose.model("order", orderSchema);
-
-  export default orderModel;
+const orderModel = mongoose.models.Order || mongoose.model("Order", orderSchema);
+export default orderModel;

@@ -5,7 +5,22 @@ import productModel from "../models/productModel.js";
 
 const addProduct = async (req, res) => {
   try {
-    const { name, description, price, category, sizes, bestseller, stock } = req.body;
+    const {
+      name,
+      description,
+      price,
+      category,
+      sizes,
+      bestseller,
+      weight,
+    } = req.body;
+
+    // ✅ Validate weight
+    if (!weight || isNaN(weight) || Number(weight) <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or missing product weight" });
+    }
 
     const image1 = req.files.image1?.[0];
     const image2 = req.files.image2?.[0];
@@ -17,23 +32,24 @@ const addProduct = async (req, res) => {
       (item) => item !== undefined
     );
 
-    let imagesUrl = await Promise.all(
+    const imagesUrl = await Promise.all(
       images.map(async (item) => {
-        let result = await cloundinary.uploader.upload(item.path, {
+        const result = await cloundinary.uploader.upload(item.path, {
           resource_type: "image",
         });
         return result.secure_url;
       })
     );
 
+    // ✅ Include weight in productData
     const productData = {
       name,
       description,
       price: Number(price),
+      weight: Number(weight), // ✅ Added this line
       category,
       sizes: JSON.parse(sizes),
       bestseller: bestseller === "true" ? true : false,
-      stock: Number(stock) || 0,   // ✅ save stock value
       image: imagesUrl,
       date: Date.now(),
     };
