@@ -1,29 +1,23 @@
-// orderController.js
-
 import orderModel from "../models/orderModel.js";
 import userModel from "../models/userModel.js";
-import productModel from "../models/productModel.js";
 import razorpay from "razorpay";
 import nodemailer from "nodemailer";
 import { orderConfirmationTemplate } from "../utils/email-template.js";
 import { client, checkoutNodeJssdk } from "../config/paypal.js";
 import { generateInvoicePdf } from "../utils/pdf-generator.js";
+import fs from "fs";
 
 const currency = "GBP";
-// You can adjust base rates here or make them configurable
-const UK_STANDARD_RATE_PER_KG = 4.99;
-const UK_NEXT_DAY_RATE_PER_KG = 8.99;
-const INTERNATIONAL_RATE_PER_KG = 9.99;
+
 
 const frontendUrl = process.env.FRONTEND_URL;
 
-// Razorpay setup (if needed)
 const razorpayInstance = new razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// Nodemailer setup (Gmail or other SMTP)
+// 🔹 Nodemailer setup (Gmail + App Password)
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 465,
@@ -33,6 +27,8 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASSWORD,
   },
 });
+
+// Optional: test transporter on app start
 transporter.verify((error, success) => {
   if (error) {
     console.error("❌ SMTP Error:", error);
@@ -41,88 +37,16 @@ transporter.verify((error, success) => {
   }
 });
 
-// Helper to calculate shipping cost
-async function calculateShippingCost(items, country, shippingMethod) {
-  // Calculate total weight in kg (assuming product.weight is in kg)
-  let totalWeight = 0;
-  for (const item of items) {
-    const product = await productModel.findById(item._id);
-    if (!product) {
-      throw new Error(`Product with ID ${item._id} not found`);
-    }
-    // product.weight should be defined
-    totalWeight += (product.weight || 0) * (item.quantity || 1);
-  }
-
-  let shippingCost = 0;
-
-  if (country.toLowerCase() === "uk") {
-    if (shippingMethod === "next_day") {
-      shippingCost = totalWeight * UK_NEXT_DAY_RATE_PER_KG;
-    } else {
-      // default or "standard"
-      shippingCost = totalWeight * UK_STANDARD_RATE_PER_KG;
-    }
-  } else {
-    // International
-    shippingCost = totalWeight * INTERNATIONAL_RATE_PER_KG;
-  }
-
-  // Optionally, you may want to enforce minimum shipping cost
-  // e.g. shippingCost = Math.max(shippingCost, someMinimum);
-
-  // Round to 2 decimals
-  shippingCost = Math.round(shippingCost * 100) / 100;
-
-  return shippingCost;
-}
-
-// COD order
+// ✅ COD order with email
 const placeOrder = async (req, res) => {
   try {
-    const {
-      userId,
-      items,
-      amount: baseAmount,
-      address,
-      shippingMethod = "standard",
-      country = "UK",
-    } = req.body;
+    const { userId, items, amount, address } = req.body;
 
-    if (!userId || !items || !items.length) {
-      return res.status(400).json({ success: false, message: "Invalid request data" });
-    }
-
-    // 1. Check stock availability
-    for (const item of items) {
-      const product = await productModel.findById(item._id);
-      if (!product) {
-        return res.status(404).json({ success: false, message: "Product not found" });
-      }
-      if (product.stock < (item.quantity || 1)) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock for product ${product.name}`,
-        });
-      }
-    }
-
-    // 2. Calculate shipping cost
-    const shippingCost = await calculateShippingCost(items, country, shippingMethod);
-
-    // 3. Compute total amount (base + shipping)
-    const totalAmount = Number(baseAmount) + shippingCost;
-
-    // 4. Create and save order
     const orderData = {
       userId,
       items,
-      baseAmount,        // the amount for products before shipping
-      shippingCost,
-      totalAmount,
+      amount,
       address,
-      shippingMethod,
-      country,
       paymentMethod: "COD",
       payment: false,
       date: Date.now(),
@@ -132,31 +56,21 @@ const placeOrder = async (req, res) => {
     const newOrder = new orderModel(orderData);
     await newOrder.save();
 
-    // 5. Deduct stock
-    for (const item of items) {
-      await productModel.findByIdAndUpdate(
-        item._id,
-        { $inc: { stock: -(item.quantity || 1) } }
-      );
-    }
-
-    // 6. Clear user cart
+    // clear user cart
     await userModel.findByIdAndUpdate(userId, { cartData: {} });
 
-    // 7. Get user details
+    // get user details
     const user = await userModel.findById(userId);
 
-    // 8. Email content
+    // generate email HTML
     const emailHtml = await orderConfirmationTemplate(
       user,
       items,
-      baseAmount,
-      address,
-      shippingCost,    // include shipping cost
-      totalAmount
+      amount,
+      address
     );
 
-    // 9. Send email to user
+    // send email to user
     await transporter.sendMail({
       from: process.env.SMTP_EMAIL,
       to: user.email,
@@ -164,7 +78,7 @@ const placeOrder = async (req, res) => {
       html: emailHtml,
     });
 
-    // 10. Email to admin
+    // send email to admin
     await transporter.sendMail({
       from: process.env.SMTP_EMAIL,
       to: process.env.ADMIN_EMAIL,
@@ -172,67 +86,40 @@ const placeOrder = async (req, res) => {
       html: `
         <h2>New Order Received</h2>
         <p><b>User:</b> ${user.email}</p>
-        <p><b>Base Amount:</b> £${baseAmount.toFixed(2)}</p>
-        <p><b>Shipping Cost:</b> £${shippingCost.toFixed(2)}</p>
-        <p><b>Total:</b> £${totalAmount.toFixed(2)}</p>
+        <p><b>Total Amount:</b> £ ${amount}</p>
         ${emailHtml}
       `,
     });
 
-    return res.json({
+    res.json({
       success: true,
-      message: "Order placed successfully",
+      message: "Order Placed & Email Sent",
       order: newOrder,
     });
   } catch (error) {
-    console.error("placeOrder Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    console.log("Order Error:", error);
+    res.json({ success: false, message: error.message });
   }
 };
 
-// PayPal order creation
+// 🔹 PAYPAL ORDER CREATION
 const placeOrderPaypal = async (req, res) => {
   try {
-    const {
-      userId,
-      items,
-      amount: baseAmount,
-      address,
-      shippingMethod = "standard",
-      country = "UK",
-    } = req.body;
+    const { userId, items, amount, address } = req.body;
 
-    if (!userId || !items || !items.length) {
-      return res.status(400).json({ success: false, message: "Invalid request data" });
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "userId is required" });
     }
 
-    // Check stock availability
-    for (const item of items) {
-      const product = await productModel.findById(item._id);
-      if (!product) {
-        return res.status(404).json({ success: false, message: "Product not found" });
-      }
-      if (product.stock < (item.quantity || 1)) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock for product ${product.name}`,
-        });
-      }
-    }
-
-    // Calculate shipping cost
-    const shippingCost = await calculateShippingCost(items, country, shippingMethod);
-
-    const totalAmount = Number(baseAmount) + shippingCost;
-
-    // Create PayPal order
     const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
     request.prefer("return=representation");
     request.requestBody({
       intent: "CAPTURE",
       application_context: {
-        return_url: `${frontendUrl}/payment-success`,
-        cancel_url: `${frontendUrl}/payment-cancelled`,
+        return_url: frontendUrl+"/payment-success",
+        cancel_url: frontendUrl+"/payment-cancelled",
         brand_name: "YourStore",
         landing_page: "LOGIN",
         user_action: "PAY_NOW",
@@ -241,7 +128,7 @@ const placeOrderPaypal = async (req, res) => {
         {
           amount: {
             currency_code: "GBP",
-            value: totalAmount.toFixed(2),
+            value: amount.toFixed(2),
           },
         },
       ],
@@ -253,12 +140,8 @@ const placeOrderPaypal = async (req, res) => {
     const newOrder = new orderModel({
       userId,
       items,
-      baseAmount,
-      shippingCost,
-      totalAmount,
+      amount,
       address,
-      shippingMethod,
-      country,
       paymentMethod: "PayPal",
       payment: false,
       paypalOrderId: order.result.id,
@@ -267,33 +150,37 @@ const placeOrderPaypal = async (req, res) => {
     });
     await newOrder.save();
 
-    return res.json({
+    res.json({
       success: true,
       id: order.result.id,
-      approvalUrl: order.result.links.find((link) => link.rel === "approve").href,
+      approvalUrl: order.result.links.find((link) => link.rel === "approve")
+        .href,
     });
   } catch (error) {
-    console.error("placeOrderPaypal Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    console.log("PayPal Order Error:", error);
+    res.json({ success: false, message: error.message });
   }
 };
 
-// PayPal verification / capture
+// 🔹 PAYPAL ORDER CAPTURE / VERIFY
 const verifyPaypal = async (req, res) => {
   try {
     const { orderId, userId } = req.body;
 
     if (!orderId || !userId) {
-      return res.status(400).json({ success: false, message: "orderId & userId are required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "orderId & userId are required" });
     }
 
+    // Capture PayPal order
     const request = new checkoutNodeJssdk.orders.OrdersCaptureRequest(orderId);
     request.requestBody({});
 
     const capture = await client().execute(request);
 
     if (capture.result.status === "COMPLETED") {
-      // Update order in DB
+      // Update the order in DB
       const updatedOrder = await orderModel.findOneAndUpdate(
         { paypalOrderId: orderId, userId },
         { payment: true, status: "Placed" },
@@ -307,33 +194,32 @@ const verifyPaypal = async (req, res) => {
         });
       }
 
-      // Deduct stock
-      for (const item of updatedOrder.items) {
-        await productModel.findByIdAndUpdate(
-          item._id,
-          { $inc: { stock: -(item.quantity || 1) } }
-        );
+      // Fetch user
+      const user = await userModel.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
       }
 
-      // Clear user cart
-      const user = await userModel.findById(userId);
+      // Clear the user's cart
       await userModel.findByIdAndUpdate(userId, { cartData: {} });
 
       // Generate email content
       const emailHtml = await orderConfirmationTemplate(
         user,
         updatedOrder.items,
-        updatedOrder.baseAmount,
+        updatedOrder.amount,
         updatedOrder.address,
-        updatedOrder.shippingCost,
-        updatedOrder.totalAmount
+        updatedOrder._id.toString()
       );
 
-      // Generate invoice PDF
+      // Generate and attach PDF invoice
       const invoicePath = await generateInvoicePdf(
         user,
         updatedOrder.items,
-        updatedOrder.totalAmount,
+        updatedOrder.amount,
         updatedOrder.address,
         updatedOrder._id.toString()
       );
@@ -366,62 +252,63 @@ const verifyPaypal = async (req, res) => {
         ],
       });
 
-      // (Optional) you may clean up invoice file if you want after some time
+      // **Invoice deletion removed** to keep the file
 
-      return res.json({
+      // Send success response
+      res.json({
         success: true,
-        message: "Payment verified & order placed",
+        message: "Payment verified",
         order: updatedOrder,
       });
     } else {
-      return res.status(400).json({ success: false, message: "Payment not completed" });
+      res.json({ success: false, message: "Payment not completed" });
     }
   } catch (error) {
-    console.error("verifyPaypal Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("PayPal Verify Error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// Admin: fetch all orders
+
+
+
+// 🔹 All orders (admin)
 const allOrders = async (req, res) => {
   try {
     const orders = await orderModel.find({}).populate("userId");
-    return res.json({ success: true, orders });
+    res.json({ success: true, orders });
   } catch (error) {
-    console.error("allOrders Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: false, message: error.message });
   }
 };
 
-// Orders for a particular user
+// 🔹 Orders for user
 const userOrders = async (req, res) => {
   try {
     const { userId } = req.body;
     const orders = await orderModel.find({ userId });
-    return res.json({ success: true, orders });
+    res.json({ success: true, orders });
   } catch (error) {
-    console.error("userOrders Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: false, message: error.message });
   }
 };
 
-// Update order status (admin)
+// 🔹 Update status
 const updateStatus = async (req, res) => {
   try {
     const { orderId, status } = req.body;
     await orderModel.findByIdAndUpdate(orderId, { status });
-    return res.json({ success: true, message: "Status Updated" });
+    res.json({ success: true, message: "Status Updated" });
   } catch (error) {
-    console.error("updateStatus Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    res.json({ success: false, message: error.message });
   }
 };
 
 export {
   placeOrder,
-  placeOrderPaypal,
-  verifyPaypal,
   allOrders,
   userOrders,
   updateStatus,
+  placeOrderPaypal,
+  verifyPaypal,
 };
