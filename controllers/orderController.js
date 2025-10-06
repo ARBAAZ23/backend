@@ -34,21 +34,27 @@ transporter.verify((error, success) => {
   }
 });
 
-// Shipping cost calculator
+// Helper: Calculate shipping cost
 async function calculateShippingCost(items, country, shippingMethod) {
   let totalWeight = 0;
+
   for (const item of items) {
-    const product = await productModel.findById(item._id);
-    if (!product) throw new Error(`Product with ID ${item._id} not found`);
+    const productId = item._id || item.productId;
+    if (!productId) throw new Error("Missing product ID in order item");
+
+    const product = await productModel.findById(productId);
+    if (!product) throw new Error(`Product with ID ${productId} not found`);
+
     totalWeight += (product.weight || 0) * (item.quantity || 1);
   }
 
   let shippingCost = 0;
 
   if (country.toLowerCase() === "uk") {
-    shippingCost = shippingMethod === "next_day"
-      ? totalWeight * UK_NEXT_DAY_RATE_PER_KG
-      : totalWeight * UK_STANDARD_RATE_PER_KG;
+    shippingCost =
+      shippingMethod === "next_day"
+        ? totalWeight * UK_NEXT_DAY_RATE_PER_KG
+        : totalWeight * UK_STANDARD_RATE_PER_KG;
   } else {
     shippingCost = totalWeight * INTERNATIONAL_RATE_PER_KG;
   }
@@ -56,7 +62,7 @@ async function calculateShippingCost(items, country, shippingMethod) {
   return Math.round(shippingCost * 100) / 100;
 }
 
-// COD Order
+// ✅ COD Order
 const placeOrder = async (req, res) => {
   try {
     const {
@@ -70,6 +76,19 @@ const placeOrder = async (req, res) => {
 
     if (!userId || !items || !items.length) {
       return res.status(400).json({ success: false, message: "Invalid request data" });
+    }
+
+    // Check that each product exists
+    for (const item of items) {
+      const productId = item._id || item.productId;
+      if (!productId) {
+        return res.status(400).json({ success: false, message: "Missing product ID in item" });
+      }
+
+      const product = await productModel.findById(productId);
+      if (!product) {
+        return res.status(404).json({ success: false, message: `Product with ID ${productId} not found` });
+      }
     }
 
     const shippingCost = await calculateShippingCost(items, country, shippingMethod);
@@ -116,7 +135,7 @@ const placeOrder = async (req, res) => {
     await transporter.sendMail({
       from: process.env.SMTP_EMAIL,
       to: process.env.ADMIN_EMAIL,
-      subject: `📢 New Order from ${user.email}`,
+      subject: `📢 New COD Order from ${user.email}`,
       html: `
         <h2>New Order Received</h2>
         <p><b>User:</b> ${user.email}</p>
@@ -138,7 +157,7 @@ const placeOrder = async (req, res) => {
   }
 };
 
-// PayPal Order Creation
+// ✅ PayPal Order Creation
 const placeOrderPaypal = async (req, res) => {
   try {
     const {
@@ -152,6 +171,18 @@ const placeOrderPaypal = async (req, res) => {
 
     if (!userId || !items || !items.length) {
       return res.status(400).json({ success: false, message: "Invalid request data" });
+    }
+
+    for (const item of items) {
+      const productId = item._id || item.productId;
+      if (!productId) {
+        return res.status(400).json({ success: false, message: "Missing product ID in item" });
+      }
+
+      const product = await productModel.findById(productId);
+      if (!product) {
+        return res.status(404).json({ success: false, message: `Product with ID ${productId} not found` });
+      }
     }
 
     const shippingCost = await calculateShippingCost(items, country, shippingMethod);
@@ -195,6 +226,7 @@ const placeOrderPaypal = async (req, res) => {
       date: Date.now(),
       status: "Pending",
     });
+
     await newOrder.save();
 
     return res.json({
@@ -208,7 +240,7 @@ const placeOrderPaypal = async (req, res) => {
   }
 };
 
-// PayPal Verification
+// ✅ PayPal Verification
 const verifyPaypal = async (req, res) => {
   try {
     const { orderId, userId } = req.body;
@@ -296,7 +328,7 @@ const verifyPaypal = async (req, res) => {
   }
 };
 
-// Admin: Get all orders
+// ✅ Admin: Get all orders
 const allOrders = async (req, res) => {
   try {
     const orders = await orderModel.find({}).populate("userId");
@@ -307,7 +339,7 @@ const allOrders = async (req, res) => {
   }
 };
 
-// Get orders for a specific user
+// ✅ User: Get orders for a user
 const userOrders = async (req, res) => {
   try {
     const { userId } = req.body;
@@ -319,7 +351,7 @@ const userOrders = async (req, res) => {
   }
 };
 
-// Admin: Update order status
+// ✅ Admin: Update order status
 const updateStatus = async (req, res) => {
   try {
     const { orderId, status } = req.body;
