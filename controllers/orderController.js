@@ -39,7 +39,7 @@ async function calculateShippingCost(items, country, shippingMethod) {
   let totalWeight = 0;
 
   for (const item of items) {
-    const productId = item._id || item.productId;
+    const productId = item.id || item.productId;
     if (!productId) throw new Error("Missing product ID in order item");
 
     const product = await productModel.findById(productId);
@@ -174,12 +174,14 @@ const placeOrderPaypal = async (req, res) => {
     }
 
     for (const item of items) {
-      const productId = item._id || item.productId;
+      const productId = item.id || item.productId;
       if (!productId) {
+        console.log(productId)
         return res.status(400).json({ success: false, message: "Missing product ID in item" });
       }
 
       const product = await productModel.findById(productId);
+
       if (!product) {
         return res.status(404).json({ success: false, message: `Product with ID ${productId} not found` });
       }
