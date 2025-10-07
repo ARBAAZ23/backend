@@ -247,18 +247,23 @@ const verifyPaypal = async (req, res) => {
   try {
     const { orderId, userId } = req.body;
 
-    if (!orderId || !userId) {
-      return res.status(400).json({ success: false, message: "orderId & userId are required" });
+    if (!orderId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "orderId is required" });
     }
 
+    // ✅ Capture PayPal payment
     const request = new checkoutNodeJssdk.orders.OrdersCaptureRequest(orderId);
     request.requestBody({});
-
     const capture = await client().execute(request);
 
+    console.log("✅ PayPal Capture Result:", capture.result.status);
+
     if (capture.result.status === "COMPLETED") {
+      // ✅ Find the order only by PayPal order ID
       const updatedOrder = await orderModel.findOneAndUpdate(
-        { paypalOrderId: orderId, userId },
+        { paypalOrderId: orderId },
         { payment: true, status: "Placed" },
         { new: true }
       );
@@ -270,9 +275,19 @@ const verifyPaypal = async (req, res) => {
         });
       }
 
-      const user = await userModel.findById(userId);
-      await userModel.findByIdAndUpdate(userId, { cartData: {} });
+      // ✅ Get user info from DB
+      const user = await userModel.findById(updatedOrder.userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found for this order",
+        });
+      }
 
+      // ✅ Clear user cart
+      await userModel.findByIdAndUpdate(user._id, { cartData: {} });
+
+      // ✅ Generate confirmation email + invoice
       const emailHtml = await orderConfirmationTemplate(
         user,
         updatedOrder.items,
@@ -290,6 +305,7 @@ const verifyPaypal = async (req, res) => {
         updatedOrder._id.toString()
       );
 
+      // ✅ Send confirmation to user
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: user.email,
@@ -303,6 +319,7 @@ const verifyPaypal = async (req, res) => {
         ],
       });
 
+      // ✅ Send notification to admin
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: process.env.ADMIN_EMAIL,
@@ -322,13 +339,16 @@ const verifyPaypal = async (req, res) => {
         order: updatedOrder,
       });
     } else {
-      return res.status(400).json({ success: false, message: "Payment not completed" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Payment not completed" });
     }
   } catch (error) {
     console.error("verifyPaypal Error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 // ✅ Admin: Get all orders
 const allOrders = async (req, res) => {
