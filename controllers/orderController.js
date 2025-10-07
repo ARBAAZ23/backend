@@ -173,7 +173,7 @@ const placeOrderPaypal = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid request data" });
     }
 
-    // ✅ Validate products
+    // ✅ Validate all product IDs exist
     for (const item of items) {
       const productId = item.id || item.productId;
       if (!productId) {
@@ -186,9 +186,19 @@ const placeOrderPaypal = async (req, res) => {
       }
     }
 
-    // ✅ Remove shipping from PayPal total
-    const shippingCost = 0;
-    const totalAmount = Number(baseAmount);
+    // ✅ Ensure baseAmount and shipping are numbers
+    const numericBaseAmount = Number(baseAmount);
+    const shippingCost = await calculateShippingCost(items, country, shippingMethod);
+    const numericShipping = Number(shippingCost);
+
+    // ✅ Final total in GBP (not pence)
+    const totalAmount = numericBaseAmount + numericShipping;
+
+    console.log("💰 PayPal Amount Check:", {
+      baseAmount: numericBaseAmount,
+      shippingCost: numericShipping,
+      totalAmount,
+    });
 
     // ✅ Create PayPal order
     const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
@@ -198,7 +208,7 @@ const placeOrderPaypal = async (req, res) => {
       application_context: {
         return_url: `${frontendUrl}/payment-success`,
         cancel_url: `${frontendUrl}/payment-cancelled`,
-        brand_name: "YourStore",
+        brand_name: "PanacheBySoh",
         landing_page: "LOGIN",
         user_action: "PAY_NOW",
       },
@@ -207,6 +217,16 @@ const placeOrderPaypal = async (req, res) => {
           amount: {
             currency_code: "GBP",
             value: totalAmount.toFixed(2),
+            breakdown: {
+              item_total: {
+                currency_code: "GBP",
+                value: numericBaseAmount.toFixed(2),
+              },
+              shipping: {
+                currency_code: "GBP",
+                value: numericShipping.toFixed(2),
+              },
+            },
           },
         },
       ],
@@ -214,12 +234,12 @@ const placeOrderPaypal = async (req, res) => {
 
     const order = await client().execute(request);
 
-    // ✅ Save order in DB
+    // ✅ Save in DB
     const newOrder = new orderModel({
       userId,
       items,
-      baseAmount,
-      shippingCost,
+      baseAmount: numericBaseAmount,
+      shippingCost: numericShipping,
       totalAmount,
       address,
       shippingMethod,
@@ -233,11 +253,10 @@ const placeOrderPaypal = async (req, res) => {
 
     await newOrder.save();
 
-    // ✅ Send PayPal approval URL to frontend
     return res.json({
       success: true,
       id: order.result.id,
-      approvalUrl: order.result.links.find((link) => link.rel === "approve").href,
+      approvalUrl: order.result.links.find(link => link.rel === "approve").href,
     });
   } catch (error) {
     console.error("placeOrderPaypal Error:", error);
@@ -248,13 +267,13 @@ const placeOrderPaypal = async (req, res) => {
 // ✅ PayPal Verification
 const verifyPaypal = async (req, res) => {
   try {
-    const { orderId } = req.body;
+    const { orderId, userId } = req.body;
 
     if (!orderId) {
       return res.status(400).json({ success: false, message: "orderId is required" });
     }
 
-    // ✅ Capture payment
+    // ✅ Capture PayPal payment
     const request = new checkoutNodeJssdk.orders.OrdersCaptureRequest(orderId);
     request.requestBody({});
     const capture = await client().execute(request);
@@ -262,7 +281,7 @@ const verifyPaypal = async (req, res) => {
     console.log("✅ PayPal Capture Result:", capture.result.status);
 
     if (capture.result.status === "COMPLETED") {
-      // ✅ Update DB order status
+      // ✅ Find the order only by PayPal order ID
       const updatedOrder = await orderModel.findOneAndUpdate(
         { paypalOrderId: orderId },
         { payment: true, status: "Placed" },
@@ -270,19 +289,25 @@ const verifyPaypal = async (req, res) => {
       );
 
       if (!updatedOrder) {
-        return res.status(404).json({ success: false, message: "No matching order found in database" });
+        return res.status(404).json({
+          success: false,
+          message: "No matching order found in database",
+        });
       }
 
-      // ✅ Get user info
+      // ✅ Get user info from DB
       const user = await userModel.findById(updatedOrder.userId);
       if (!user) {
-        return res.status(404).json({ success: false, message: "User not found for this order" });
+        return res.status(404).json({
+          success: false,
+          message: "User not found for this order",
+        });
       }
 
       // ✅ Clear user cart
       await userModel.findByIdAndUpdate(user._id, { cartData: {} });
 
-      // ✅ Generate confirmation email and invoice
+      // ✅ Generate confirmation email + invoice
       const emailHtml = await orderConfirmationTemplate(
         user,
         updatedOrder.items,
@@ -300,25 +325,31 @@ const verifyPaypal = async (req, res) => {
         updatedOrder._id.toString()
       );
 
-      // ✅ Send confirmation email to user
+      // ✅ Send confirmation to user
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: user.email,
         subject: "✅ PayPal Order Confirmed",
         html: emailHtml,
         attachments: [
-          { filename: `Invoice-${updatedOrder._id}.pdf`, path: invoicePath },
+          {
+            filename: `Invoice-${updatedOrder._id}.pdf`,
+            path: invoicePath,
+          },
         ],
       });
 
-      // ✅ Notify admin
+      // ✅ Send notification to admin
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: process.env.ADMIN_EMAIL,
         subject: `📢 New PayPal Order from ${user.email}`,
         html: emailHtml,
         attachments: [
-          { filename: `Invoice-${updatedOrder._id}.pdf`, path: invoicePath },
+          {
+            filename: `Invoice-${updatedOrder._id}.pdf`,
+            path: invoicePath,
+          },
         ],
       });
 
@@ -335,7 +366,6 @@ const verifyPaypal = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
-
 
 
 
