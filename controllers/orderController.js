@@ -173,23 +173,24 @@ const placeOrderPaypal = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid request data" });
     }
 
+    // ✅ Validate products
     for (const item of items) {
       const productId = item.id || item.productId;
       if (!productId) {
-        console.log(productId)
         return res.status(400).json({ success: false, message: "Missing product ID in item" });
       }
 
       const product = await productModel.findById(productId);
-
       if (!product) {
         return res.status(404).json({ success: false, message: `Product with ID ${productId} not found` });
       }
     }
 
-    const shippingCost = await calculateShippingCost(items, country, shippingMethod);
-    const totalAmount = Number(baseAmount) + shippingCost;
+    // ✅ Remove shipping from PayPal total
+    const shippingCost = 0;
+    const totalAmount = Number(baseAmount);
 
+    // ✅ Create PayPal order
     const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
     request.prefer("return=representation");
     request.requestBody({
@@ -213,6 +214,7 @@ const placeOrderPaypal = async (req, res) => {
 
     const order = await client().execute(request);
 
+    // ✅ Save order in DB
     const newOrder = new orderModel({
       userId,
       items,
@@ -231,10 +233,11 @@ const placeOrderPaypal = async (req, res) => {
 
     await newOrder.save();
 
+    // ✅ Send PayPal approval URL to frontend
     return res.json({
       success: true,
       id: order.result.id,
-      approvalUrl: order.result.links.find(link => link.rel === "approve").href,
+      approvalUrl: order.result.links.find((link) => link.rel === "approve").href,
     });
   } catch (error) {
     console.error("placeOrderPaypal Error:", error);
@@ -245,15 +248,13 @@ const placeOrderPaypal = async (req, res) => {
 // ✅ PayPal Verification
 const verifyPaypal = async (req, res) => {
   try {
-    const { orderId, userId } = req.body;
+    const { orderId } = req.body;
 
     if (!orderId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "orderId is required" });
+      return res.status(400).json({ success: false, message: "orderId is required" });
     }
 
-    // ✅ Capture PayPal payment
+    // ✅ Capture payment
     const request = new checkoutNodeJssdk.orders.OrdersCaptureRequest(orderId);
     request.requestBody({});
     const capture = await client().execute(request);
@@ -261,7 +262,7 @@ const verifyPaypal = async (req, res) => {
     console.log("✅ PayPal Capture Result:", capture.result.status);
 
     if (capture.result.status === "COMPLETED") {
-      // ✅ Find the order only by PayPal order ID
+      // ✅ Update DB order status
       const updatedOrder = await orderModel.findOneAndUpdate(
         { paypalOrderId: orderId },
         { payment: true, status: "Placed" },
@@ -269,25 +270,19 @@ const verifyPaypal = async (req, res) => {
       );
 
       if (!updatedOrder) {
-        return res.status(404).json({
-          success: false,
-          message: "No matching order found in database",
-        });
+        return res.status(404).json({ success: false, message: "No matching order found in database" });
       }
 
-      // ✅ Get user info from DB
+      // ✅ Get user info
       const user = await userModel.findById(updatedOrder.userId);
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found for this order",
-        });
+        return res.status(404).json({ success: false, message: "User not found for this order" });
       }
 
       // ✅ Clear user cart
       await userModel.findByIdAndUpdate(user._id, { cartData: {} });
 
-      // ✅ Generate confirmation email + invoice
+      // ✅ Generate confirmation email and invoice
       const emailHtml = await orderConfirmationTemplate(
         user,
         updatedOrder.items,
@@ -305,31 +300,25 @@ const verifyPaypal = async (req, res) => {
         updatedOrder._id.toString()
       );
 
-      // ✅ Send confirmation to user
+      // ✅ Send confirmation email to user
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: user.email,
         subject: "✅ PayPal Order Confirmed",
         html: emailHtml,
         attachments: [
-          {
-            filename: `Invoice-${updatedOrder._id}.pdf`,
-            path: invoicePath,
-          },
+          { filename: `Invoice-${updatedOrder._id}.pdf`, path: invoicePath },
         ],
       });
 
-      // ✅ Send notification to admin
+      // ✅ Notify admin
       await transporter.sendMail({
         from: process.env.SMTP_EMAIL,
         to: process.env.ADMIN_EMAIL,
         subject: `📢 New PayPal Order from ${user.email}`,
         html: emailHtml,
         attachments: [
-          {
-            filename: `Invoice-${updatedOrder._id}.pdf`,
-            path: invoicePath,
-          },
+          { filename: `Invoice-${updatedOrder._id}.pdf`, path: invoicePath },
         ],
       });
 
@@ -339,15 +328,15 @@ const verifyPaypal = async (req, res) => {
         order: updatedOrder,
       });
     } else {
-      return res
-        .status(400)
-        .json({ success: false, message: "Payment not completed" });
+      return res.status(400).json({ success: false, message: "Payment not completed" });
     }
   } catch (error) {
     console.error("verifyPaypal Error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+
 
 
 // ✅ Admin: Get all orders
