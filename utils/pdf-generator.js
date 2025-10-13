@@ -8,7 +8,7 @@ export const generateInvoicePdf = async (user, items, amount, address, orderId) 
     try {
       console.log("🧾 Generating professional invoice:", orderId);
 
-      const invoicesDir = path.resolve("./invoices");
+      const invoicesDir = path.resolve("./uploads/invoices");
       const invoicePath = path.join(invoicesDir, `Invoice-${orderId}.pdf`);
 
       if (!fs.existsSync(invoicesDir)) {
@@ -19,7 +19,7 @@ export const generateInvoicePdf = async (user, items, amount, address, orderId) 
       const writeStream = fs.createWriteStream(invoicePath);
       doc.pipe(writeStream);
 
-      // --- Colors (classic with accent) ---
+      // --- Colors ---
       const colors = {
         accent: "#4F46E5", // Indigo
         grayDark: "#111827",
@@ -76,7 +76,7 @@ export const generateInvoicePdf = async (user, items, amount, address, orderId) 
         .text(`Invoice Date: ${invoiceDate}`)
         .text(`Payment Due: ${dueDate}`);
 
-      doc.moveUp(3); // Move up to align client info at right
+      doc.moveUp(3);
 
       doc
         .font("Helvetica-Bold")
@@ -103,8 +103,7 @@ export const generateInvoicePdf = async (user, items, amount, address, orderId) 
         .lineWidth(1)
         .strokeColor(colors.border)
         .rect(50, tableTop, doc.page.width - 100, 25)
-        .stroke()
-        .fill(colors.accent);
+        .fillAndStroke(colors.accent, colors.border);
 
       doc
         .fillColor("white")
@@ -133,11 +132,8 @@ export const generateInvoicePdf = async (user, items, amount, address, orderId) 
         const price = typeof product?.price === "number" ? product.price : 0;
         const total = price * quantity;
 
-        // Stripe effect
         if (i % 2 === 0) {
-          doc
-            .rect(50, yPos, doc.page.width - 100, 24)
-            .fill(colors.grayLight);
+          doc.rect(50, yPos, doc.page.width - 100, 24).fill(colors.grayLight);
         }
 
         doc
@@ -159,26 +155,22 @@ export const generateInvoicePdf = async (user, items, amount, address, orderId) 
       const totalBoxX = doc.page.width - 280;
       const boxY = doc.y;
 
-      const subtotal = amount * 0.9; // Example: subtotal before tax
-      const tax = amount * 0.1;
-
       doc
         .font("Helvetica-Bold")
         .fontSize(12)
         .fillColor(colors.grayDark)
         .text("Subtotal:", totalBoxX, boxY, { align: "right" })
-        .text("Tax (10%):", totalBoxX, boxY + 20, { align: "right" })
-        .text("Total:", totalBoxX, boxY + 40, { align: "right" });
+        .moveDown(0.5)
+        .text("Total:", totalBoxX, boxY + 20, { align: "right" });
 
       doc
         .font("Helvetica")
         .fillColor(colors.grayMedium)
-        .text(`£${subtotal.toFixed(2)}`, totalBoxX + 80, boxY, { align: "right" })
-        .text(`£${tax.toFixed(2)}`, totalBoxX + 80, boxY + 20, { align: "right" })
+        .text(`£${amount.toFixed(2)}`, totalBoxX + 80, boxY, { align: "right" })
         .font("Helvetica-Bold")
         .fillColor(colors.accent)
         .fontSize(14)
-        .text(`£${amount.toFixed(2)}`, totalBoxX + 80, boxY + 40, { align: "right" });
+        .text(`£${amount.toFixed(2)}`, totalBoxX + 80, boxY + 20, { align: "right" });
 
       doc.moveDown(6);
 

@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
   items: { type: Array, required: true },
   baseAmount: { type: Number, required: true },     // amount excluding shipping
   shippingCost: { type: Number, required: true },
@@ -16,5 +16,5 @@ const orderSchema = new mongoose.Schema({
   status: { type: String, default: "Pending" },
 });
 
-const orderModel = mongoose.models.Order || mongoose.model("Order", orderSchema);
+const orderModel = mongoose.models.Order || mongoose.model("order", orderSchema);
 export default orderModel;

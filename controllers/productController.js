@@ -107,7 +107,6 @@ const singleProduct = async (req, res) => {
 const idProduct = async (req, res) => {
   try {
     const { id } = req.params;
-
     const product = await productModel.findById(id);
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
@@ -115,10 +114,11 @@ const idProduct = async (req, res) => {
 
     res.json({ success: true, product });
   } catch (error) {
-    console.log(error);
+    console.log("❌ Error in idProduct:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 
 export { listProduct, addProduct, removeProduct, singleProduct,idProduct };

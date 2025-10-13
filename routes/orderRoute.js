@@ -5,7 +5,9 @@ import {
   userOrders,
   updateStatus,
   placeOrderPaypal,
-  verifyPaypal
+  verifyPaypal,
+  getAllInvoices,
+  getInvoice
 } from "../controllers/orderController.js";
 import adminAuth from "../middleware/AdminAuth.js";
 import authUser from "../middleware/auth.js";
@@ -15,6 +17,10 @@ const orderRouter = express.Router();
 // Admin
 orderRouter.post("/list", adminAuth, allOrders);
 orderRouter.post("/status", adminAuth, updateStatus);
+
+// GET all invoice records
+orderRouter.get("/invoices", getAllInvoices);
+orderRouter.get("/invoice/:id", getInvoice);
 
 // COD
 orderRouter.post("/place", authUser, placeOrder);
