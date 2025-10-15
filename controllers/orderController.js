@@ -18,6 +18,9 @@ const INTERNATIONAL_RATE_PER_KG = 9.99;
 async function calculateShippingCost(items, country = "UK", shippingMethod = "standard") {
   let totalWeightGrams = 0;
 
+  // Define possible size keys
+  const sizeKeys = ["XS", "S", "M", "L", "XL", "XXL"];
+
   for (const item of items) {
     const productId = item.id || item.productId || item._id;
     if (!productId) throw new Error("Missing product ID in order item");
@@ -27,7 +30,21 @@ async function calculateShippingCost(items, country = "UK", shippingMethod = "st
 
     // assume weight in grams, fallback to 500g
     const productWeight = product.weight || 500;
-    totalWeightGrams += productWeight * (item.quantity || 1);
+
+    // Sum all size quantities
+    let quantity = 0;
+    for (const size of sizeKeys) {
+      if (item[size]) {
+        quantity += Number(item[size]);
+      }
+    }
+
+    // If no size quantities found, fallback to item.quantity or 1
+    if (quantity === 0) {
+      quantity = item.quantity || 1;
+    }
+
+    totalWeightGrams += productWeight * quantity;
   }
 
   // convert grams → kg
@@ -43,12 +60,25 @@ async function calculateShippingCost(items, country = "UK", shippingMethod = "st
     shippingCost = totalWeightKg * INTERNATIONAL_RATE_PER_KG;
   }
 
-  // ✅ Optional: free shipping over £100
-  const subtotal = items.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0);
+  // Optional: free shipping over £100
+  const subtotal = items.reduce((sum, i) => {
+    // calculate total quantity for each item similar to above
+    let qty = 0;
+    for (const size of sizeKeys) {
+      if (i[size]) {
+        qty += Number(i[size]);
+      }
+    }
+    if (qty === 0) qty = i.quantity || 1;
+
+    return sum + (i.price || 0) * qty;
+  }, 0);
+
   if (subtotal >= 100) shippingCost = 0;
 
   return Math.round(shippingCost * 100) / 100;
 }
+
 
 // ✅ SMTP SETUP
 const transporter = nodemailer.createTransport({

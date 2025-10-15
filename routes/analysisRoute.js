@@ -5,20 +5,25 @@ const analysisRouter = express.Router();
 
 analysisRouter.get("/", async (req, res) => {
   try {
-    // 🟢 Total PAID orders
-    const totalPlacedOrders = await orderModel.find({ payment: true });
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentYear = currentDate.getFullYear();
+
+    // ✅ Total Paid Orders
+    const totalPlacedOrders = await orderModel.find({ paymentStatus: "Paid" });
     const totalOrders = totalPlacedOrders.length;
-    // 🟢 Total sales (sum of all PAID order amounts)
+
+    // ✅ Total Sales
     const salesData = await orderModel.aggregate([
-      { $match: { payment: true, createdAt: { $exists: true } } },
+      { $match: { paymentStatus: "Paid", createdAt: { $exists: true } } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     const totalSales = salesData[0]?.total || 0;
 
-    // 🟢 Monthly sales (only PAID orders)
+    // ✅ Monthly Sales
     const monthlySales = await orderModel.aggregate([
       {
-        $match: { payment: true, createdAt: { $exists: true } },
+        $match: { paymentStatus: "Paid", createdAt: { $exists: true } },
       },
       {
         $group: {
@@ -37,11 +42,7 @@ analysisRouter.get("/", async (req, res) => {
       sales: item.total,
     }));
 
-    // 🟢 Top products of the current month (only PAID orders)
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
-
+    // ✅ Top Products This Month
     const topProducts = await orderModel.aggregate([
       {
         $match: {
@@ -81,17 +82,14 @@ analysisRouter.get("/", async (req, res) => {
       { $limit: 5 },
     ]);
 
-    let response = {
+    // ✅ Final Response
+    res.json({
       success: true,
-      totalOrders: totalOrders,
+      totalOrders,
       totalSales,
       salesOverTime,
       topProducts,
-    };
-
-    console.log(response);
-
-    res.json(response);
+    });
   } catch (error) {
     console.error("❌ Analysis error:", error);
     res.status(500).json({ success: false, message: "Server Error" });

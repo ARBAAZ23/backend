@@ -118,7 +118,63 @@ const idProduct = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+// function to update a product
+const updateProduct = async (req, res) => {
+  try {
+    const {
+      id,
+      name,
+      description,
+      price,
+      category,
+      sizes,
+      bestseller,
+      weight,
+    } = req.body;
+
+    const product = await productModel.findById(id);
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    // ✅ Update fields if provided
+    if (name) product.name = name;
+    if (description) product.description = description;
+    if (price) product.price = Number(price);
+    if (weight) product.weight = Number(weight);
+    if (category) product.category = category;
+    if (sizes) product.sizes = Array.isArray(sizes) ? sizes : JSON.parse(sizes);
+    if (typeof bestseller !== "undefined") product.bestseller = bestseller === "true" || bestseller === true;
+
+    // ✅ Handle optional new images
+    const image1 = req.files?.image1?.[0];
+    const image2 = req.files?.image2?.[0];
+    const image3 = req.files?.image3?.[0];
+    const image4 = req.files?.image4?.[0];
+    const image5 = req.files?.image5?.[0];
+
+    const images = [image1, image2, image3, image4, image5].filter(Boolean);
+
+    if (images.length > 0) {
+      const uploadedImages = await Promise.all(
+        images.map((file) =>
+          cloundinary.uploader.upload(file.path, {
+            resource_type: "image",
+          })
+        )
+      );
+      product.image = uploadedImages.map((img) => img.secure_url);
+    }
+
+    await product.save();
+
+    res.json({ success: true, message: "Product updated", product });
+  } catch (error) {
+    console.log("❌ Error updating product:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 
 
 
-export { listProduct, addProduct, removeProduct, singleProduct,idProduct };
+export { listProduct, addProduct, removeProduct, singleProduct,idProduct,updateProduct };
